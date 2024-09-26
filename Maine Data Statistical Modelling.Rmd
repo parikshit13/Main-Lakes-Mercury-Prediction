@@ -1,0 +1,149 @@
+---
+title: "DAC Assignment 3"
+author: "Parikshit Patil"
+date: '`r Sys.Date()`'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Loading
+```{r}
+# Define column names
+column_names <- c("NAME", "HG", "N", "ELV", "SA", "Z", "LT", "ST", "DA", "RF",
+                  "FR", "DAM", "LAT1", "LAT2", "LAT3", "LONG1", "LONG2", "LONG3")
+
+# Read data from text file
+data_maine <- read.table("Assignment3_2024_Data.txt", header = FALSE, sep = " ", col.names = column_names)
+
+#data_maine
+```
+
+## Preprocessing
+```{r}
+# Drop rows with NA values
+data_maine = na.omit(data_maine)
+
+# Drop rows where HG > 2
+data_maine = data_maine[data_maine$HG <= 2, ]
+
+# Remove the 'NAME' column
+data_maine = subset(data_maine, select = -NAME)
+
+# Combine latitude degrees, minutes, and seconds into a single column
+data_maine$LAT <- data_maine$LAT1 + data_maine$LAT2 / 60 + data_maine$LAT3 / 3600
+# Combine longitude degrees, minutes, and seconds into a single column
+data_maine$LONG <- data_maine$LONG1 + data_maine$LONG2 / 60 + data_maine$LONG3 / 3600
+# Drop the original latitude and longitude columns
+data_maine <- subset(data_maine, select = -c(LAT1, LAT2, LAT3, LONG1, LONG2, LONG3))
+
+# One Hot Encode LT
+data_maine$LT = as.factor(data_maine$LT)
+# One Hot Encode DAM
+data_maine$DAM = as.factor(data_maine$DAM)
+# One Hot Encode Lake Type ST
+data_maine$ST = as.factor(data_maine$ST)
+
+#data_maine
+```
+
+## Model 1 - SLR
+```{r}
+lm_maine = lm(HG~.,data = data_maine)
+summary(lm_maine)
+```
+
+## Box Cox Transformation for lm_maine
+```{r}
+library(MASS)
+
+boxcox(lm_maine)
+boxcox(lm_maine, lambda = seq(0, 0.5, by = 0.05))
+
+lambda = 0.35
+lm_maine_trans = lm(((HG^(lambda)-1)/(lambda))~.,data = data_maine)
+summary(lm_maine_trans)
+```
+
+## Model With Interactions
+```{r}
+lm_maine_inter = lm(HG ~ . + ELV:LAT + ELV:LONG + ELV:LAT:LONG, data_maine)
+summary(lm_maine_inter)
+```
+
+## Box Cox Transformation for lm_maine_inter
+```{r}
+library(MASS)
+
+boxcox(lm_maine_inter)
+boxcox(lm_maine_inter, lambda = seq(0, 0.6, by = 0.05))
+
+lambda = 0.35
+lm_maine_inter_trans = lm(((HG^(lambda)-1)/(lambda))~. + ELV:LAT + ELV:LONG + ELV:LAT:LONG,data = data_maine)
+summary(lm_maine_inter_trans)
+```
+
+## Stepwise Feature Selection
+```{r}
+lm_maine_step_aic = step(lm_maine,direction = "both", trace = 0)
+summary(lm_maine_step_aic)
+
+lm_maine_trans_step_aic = step(lm_maine_trans,direction = "both", trace = 0)
+summary(lm_maine_trans_step_aic)
+
+lm_maine_inter_step_aic = step(lm_maine_inter,direction = "both", trace = 0)
+summary(lm_maine_inter_step_aic)
+
+lm_maine_inter_trans_step_aic = step(lm_maine_inter_trans,direction = "both", trace = 0)
+summary(lm_maine_inter_trans_step_aic)
+```
+## Collineraity Tests
+```{r}
+library(faraway)
+
+vif(lm_maine)
+vif(lm_maine_trans)
+vif(lm_maine_inter)
+vif(lm_maine_inter_trans)
+vif(lm_maine_step_aic)
+vif(lm_maine_trans_step_aic)
+vif(lm_maine_inter_step_aic)
+vif(lm_maine_inter_trans_step_aic)
+```
+
+## Random Forrest
+```{r}
+library(randomForest)
+
+set.seed(1)
+maine_forest_model = randomForest(HG ~ ., data = data_maine, importance = TRUE)
+
+varImpPlot(maine_forest_model)
+
+# Generate predictions on the training data
+predicted_values = predict(maine_forest_model)
+```
+
+## Printing All r-squared values
+```{r}
+summary(lm_maine)$adj.r.squared
+summary(lm_maine_trans)$adj.r.squared
+summary(lm_maine_inter)$adj.r.squared
+summary(lm_maine_inter_trans)$adj.r.squared
+summary(lm_maine_step_aic)$adj.r.squared
+summary(lm_maine_trans_step_aic)$adj.r.squared
+summary(lm_maine_inter_step_aic)$adj.r.squared
+summary(lm_maine_inter_trans_step_aic)$adj.r.squared
+
+# Random Forrest R-squared
+cor(predicted_values, data_maine$HG)^2
+```
+## Inverse Box Cox Transformations of coefficients for model lm_maine_inter_trans_step_aic
+```{r}
+(lambda*coef(lm_maine_inter_trans_step_aic)+1)^(1/lambda)
+```
+```{r}
+exp(coef(lm_maine_inter_trans_step_aic) * lambda) - 1
+```
